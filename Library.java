@@ -506,8 +506,7 @@ class Screen extends JPanel implements ActionListener {
         if (e.getSource() == forward) {
             currentBook.flipForward();
             repaint();
-        }
-        else if (e.getSource() == backward) {
+        } else if (e.getSource() == backward) {
             currentBook.flipBackward();
             repaint();
         }
@@ -515,8 +514,7 @@ class Screen extends JPanel implements ActionListener {
         else if (e.getSource() == front) {
             currentBook.setPage(1);
             repaint();
-        }
-        else if (e.getSource() == back) {
+        } else if (e.getSource() == back) {
             currentBook.setPage(410);
             repaint();
         }
@@ -557,17 +555,38 @@ class Screen extends JPanel implements ActionListener {
             if (findITxt.length() > 3200) {
                 throw new IllegalArgumentException("Screen.actionPerformed(ActionEvent).findITxt.length() is too large (>3200)");
             }
+            /*
+            CURRENT
+            1. Get base-95 of input and encrypt
+            2. Convert encrypted base-95 to text
+            3. Substitute input into text
+            4. Convert text to encrypted base-95
+            5. Convert encrypted base-95 into bookID
+            6. Made book and components with bookID
+            */
+            /*
+            PLAN
+            3. Subtitute input directly into encrypted base-95
+            */
 
             // get encrypted base-95 of string
             BigInteger encryptedBase95 = LibCipher.encrypt(LibCipher.toBase95(findITxt));
-
-            // get location of string within page via last 4 digits of encrypted base-95 number
-            int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() + 1)).intValue();
-
+            
             // get text of encrypted base-95 number
             String text = LibCipher.toText(encryptedBase95);
 
+            /*
+            to 3199 within page, max of 3199 - length
+            
+            int locationPage = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() + 1)).intValue();
+            int locationAbsolute = 3200 * (page - 1) + locationPage;
+            BigInteger left = toBase95(text.substring(0, locationAbsolute));
+            if (locationAbsolute != 1312000BigInteger right = toBase95(text.substring(locationAbsolute + findITxt.length()));
+            Big
+            */
+
             // replace text at location with text to find
+            int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() )).intValue();
             text = text.substring(0, (3200 * (page - 1)) + location) + findITxt + text.substring((3200 * (page - 1)) + location + findITxt.length());
 
             // run text through toBase95(String) and decrypt number
@@ -596,8 +615,7 @@ class Screen extends JPanel implements ActionListener {
             shelfI.selectAll();
             shelfI.copy();
             shelfI.setText(shelfITxt);
-        }
-        else if (e.getSource() == paste) {
+        } else if (e.getSource() == paste) {
             shelfI.paste();
         }
     }
