@@ -207,16 +207,25 @@ class LibCipher {
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             int index = ALPHABET.indexOf(c);
-            
+
             if (index == -1) {
                 throw new IllegalArgumentException("Character '" + c + "' not found in LibCipher.ALPHABET in LibCipher.toBase95(String)");
             }
 
-            // shift value up by one base position and add new digit
             result = result.multiply(base).add(numbers[index]);
         }
 
         return result;
+    }
+
+    public BigInteger toBase95(BigInteger left, BigInteger insert, BigInteger right, int insertLength, int rightLength) {
+        BigInteger rtrn = toBase95(left);
+        BigInteger base = BigInteger.valueOf(95);
+        
+        rtrn.multiply(base.pow(insertLength)).add(insert);
+        rtrn.multiply(base.pow(rightLength)).add(right);
+        
+        return rtrn;
     }
 }
 
@@ -574,23 +583,39 @@ class Screen extends JPanel implements ActionListener {
             
             // get text of encrypted base-95 number
             String text = LibCipher.toText(encryptedBase95);
-
-            /*
-            to 3199 within page, max of 3199 - length
             
-            int locationPage = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() + 1)).intValue();
-            int locationAbsolute = 3200 * (page - 1) + locationPage;
-            BigInteger left = toBase95(text.substring(0, locationAbsolute));
-            if (locationAbsolute != 1312000BigInteger right = toBase95(text.substring(locationAbsolute + findITxt.length()));
-            Big
-            */
+            // get location
+            int location = 3200 * (page - 1) + encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length())).intValue();
 
+            // insert input in text
+            BigInteger newBookID;
+
+            /* DOUBLE CHECK RANGES  (FOR TOMORROW) :) */
+            
+            if (locationAbsolute >= 1312000 - findITxt.length() - 1) {
+
+                // get left, input, and right sections
+                BigInteger left = toBase95(text.substring(0, locationAbsolute));
+                BigInteger input = toBase95(findITxt);
+                BigInteger right = toBase95(text.substring(locationAbsolute + findITxt.length()));
+
+                // insert at location
+                newBookID = toBase95(left, insert, right, insert.length(), 1312000 - );
+            } 
+            
+            // insert at end if needed
+            else {
+                newBookID = left.add(input);
+            }
+            
+            /*
             // replace text at location with text to find
-            int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() )).intValue();
-            text = text.substring(0, (3200 * (page - 1)) + location) + findITxt + text.substring((3200 * (page - 1)) + location + findITxt.length());
+            int locationPage = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length())).intValue();
+            text = text.substring(0, (3200 * (page - 1)) + locationPage) + findITxt + text.substring((3200 * (page - 1)) + locationPage + findITxt.length());
 
-            // run text through toBase95(String) and decrypt number
-            BigInteger newBookID = LibCipher.toBase95(text);
+            // run text through toBase95(String)
+            newBookID = LibCipher.toBase95(text);
+            */
 
             // set book
             currentBook = new Book(newBookID, LibCipher, "encrypted");
