@@ -1,4 +1,5 @@
 import java.math.BigInteger;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -6,6 +7,9 @@ import java.security.NoSuchAlgorithmException;
 //import javax.crypto.Cipher; /* REMOVE // AS NEEDED */
 import javax.crypto.spec.SecretKeySpec;
 import javax.crypto.spec.IvParameterSpec;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 import java.awt.*;
 import java.awt.Toolkit;
@@ -26,6 +30,7 @@ class LibCipher {
     
     private static final int BOOK_SIZE = 410 * 40 * 80; // 1312000
     private static final String ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%&'()*+,-./[\\]^_`:;<=>?@{|}~ ";
+    private static final Map<Integer, BigInteger> powerCache = new ConcurrentHashMap<>();
 
     // ThreadLocal to reuse the AES Engine per thread for maximum speed
     private final ThreadLocal<javax.crypto.Cipher> aesHolder = ThreadLocal.withInitial(() -> {
@@ -153,25 +158,29 @@ class LibCipher {
     }
 
     private static void toBase95(BigInteger value, char[] target, int offset, int length, char[] alphabet) {
-        if (length == 1) {
-            target[offset] = alphabet[value.intValue()];
+        // compute last 5 if small enough
+         if (length <= 5) {
+            long val = value.longValue();
+            for (int i = length - 1; i >= 0; i--) {
+                target[offset + i] = alphabet[(int) (val % 95)];
+                val /= 95;
+            }
             return;
         }
-
-        // get lengths of halves of value
+    
         int halfLength = length / 2;
         int leftLength = length - halfLength;
+    
+        // fetch power of 95
+        BigInteger splitBase = powerCache.computeIfAbsent(halfLength, k -> BigInteger.valueOf(95).pow(k));
 
-        // get base of splitValue[0]
-        BigInteger splitBase = BigInteger.valueOf(95).pow(halfLength);
-
+        // check for A's
         if (value.compareTo(splitBase) < 0) {
             java.util.Arrays.fill(target, offset, offset + leftLength, alphabet[0]);
             toBase95(value, target, offset + leftLength, halfLength, alphabet);
         } else {
-
-            // split value and get base-95 of both
             BigInteger[] parts = value.divideAndRemainder(splitBase);
+            // note: wrap in forkjoin if needed
             toBase95(parts[0], target, offset, leftLength, alphabet);
             toBase95(parts[1], target, offset + leftLength, halfLength, alphabet);
         }
@@ -383,7 +392,6 @@ class Screen extends JPanel implements ActionListener {
 
     private JButton forward, back;
     private JButton backward, front;
-    
     private JButton copy, paste;
 
     private Font c12, c20;
@@ -555,35 +563,12 @@ class Screen extends JPanel implements ActionListener {
             if (findITxt.length() > 3200) {
                 throw new IllegalArgumentException("Screen.actionPerformed(ActionEvent).findITxt.length() is too large (>3200)");
             }
-            /*
-            CURRENT
-            1. Get base-95 of input and encrypt
-            2. Convert encrypted base-95 to text
-            3. Substitute input into text
-            4. Convert text to encrypted base-95
-            5. Convert encrypted base-95 into bookID
-            6. Made book and components with bookID
-            */
-            /*
-            PLAN
-            3. Subtitute input directly into encrypted base-95
-            */
 
             // get encrypted base-95 of string
             BigInteger encryptedBase95 = LibCipher.encrypt(LibCipher.toBase95(findITxt));
             
             // get text of encrypted base-95 number
             String text = LibCipher.toText(encryptedBase95);
-
-            /*
-            to 3199 within page, max of 3199 - length
-            
-            int locationPage = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() + 1)).intValue();
-            int locationAbsolute = 3200 * (page - 1) + locationPage;
-            BigInteger left = toBase95(text.substring(0, locationAbsolute));
-            if (locationAbsolute != 1312000BigInteger right = toBase95(text.substring(locationAbsolute + findITxt.length()));
-            Big
-            */
 
             // replace text at location with text to find
             int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() )).intValue();
@@ -618,6 +603,7 @@ class Screen extends JPanel implements ActionListener {
         } else if (e.getSource() == paste) {
             shelfI.paste();
         }
+        
     }
 }
 
