@@ -609,7 +609,7 @@ class Screen extends JPanel implements ActionListener {
 
 
 
-public class Main {
+public class Library {
     public static void main(String[] args) {
         Amount a = new Amount();
 
