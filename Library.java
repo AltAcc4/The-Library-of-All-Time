@@ -32,6 +32,14 @@ class LibCipher {
     private static final String ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%&'()*+,-./[\\]^_`:;<=>?@{|}~ ";
     private static final Map<Integer, BigInteger> powerCache = new ConcurrentHashMap<>();
 
+    private final ThreadLocal<MessageDigest> shaHolder = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 initialization failed in Cipher.shaHolder");
+        }
+    });
+
     // ThreadLocal to reuse the AES Engine per thread for maximum speed
     private final ThreadLocal<javax.crypto.Cipher> aesHolder = ThreadLocal.withInitial(() -> {
         try {
@@ -46,9 +54,10 @@ class LibCipher {
         
         // hash arbitrary string to derive cryptographically sound 256-bit AES master key
         try {
-            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            MessageDigest sha = shaHolder.get();
+            sha.reset();
             this.masterKey = sha.digest(key.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Key hash via SHA-256 failed in LibCipher(BigInteger)", e);
         }
         
@@ -118,7 +127,8 @@ class LibCipher {
             javax.crypto.Cipher aesCtr = aesHolder.get();
             
             // uniquely seed round key by mixing the master key with internal half-block state
-            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            MessageDigest sha = shaHolder.get();
+            sha.reset();
             sha.update(masterKey);
             sha.update(half.toByteArray());
             byte[] roundKeyBytes = sha.digest();
@@ -191,7 +201,7 @@ class LibCipher {
             throw new IllegalArgumentException("Invalid text in LibCipher.toScrambledID(>String)");
         }
 
-        // split if length is over 50000
+        // split if length is over 1250
         if (text.length() > 1250) {
             int mid = text.length() / 2;
             String firstHalf = text.substring(0, mid);
@@ -205,6 +215,13 @@ class LibCipher {
             return firstValue.multiply(base.pow(secondHalf.length())).add(secondValue);
         }
 
+        int chunk = 1;
+        for (int i = 2; i < 10; i++) {
+            if (text.length() % i == 0) {
+                chunk = i;
+            }
+        }
+
         BigInteger result = BigInteger.ZERO;
         BigInteger base = BigInteger.valueOf(95);
 
@@ -213,16 +230,21 @@ class LibCipher {
             numbers[i] = BigInteger.valueOf(i);
         }
 
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            int index = ALPHABET.indexOf(c);
-            
-            if (index == -1) {
-                throw new IllegalArgumentException("Character '" + c + "' not found in LibCipher.ALPHABET in LibCipher.toBase95(String)");
+        for (int i = 0; i < text.length(); i += chunk) {
+            char[] chars = text.substring(i, i + chunk).toCharArray();
+            BigInteger add = BigInteger.ZERO;
+
+            // get value of chunk
+            for (int j = 0; j < chunk; j++) {
+                int index = ALPHABET.indexOf(chars[j]);
+                if (index == -1) {
+                    throw new IllegalArgumentException("Character '" + chars[j] + "' not found in LibCipher.ALPHABET in LibCipher.toBase95(String)");
+                }
+                add = add.multiply(base).add(numbers[index]);
             }
 
-            // shift value up by one base position and add new digit
-            result = result.multiply(base).add(numbers[index]);
+            // shift value up by chunk base positions and add value of chunk
+            result = result.multiply(base.pow(chunk)).add(add);
         }
 
         return result;
@@ -470,6 +492,8 @@ class Screen extends JPanel implements ActionListener {
         front.setBounds(215, 70, 55, 30);
         front.addActionListener(this);
         this.add(front);
+
+        updatePage();
     }
     
     @Override
@@ -480,10 +504,6 @@ class Screen extends JPanel implements ActionListener {
     @Override
   	public void paintComponent(Graphics g) {
         super.paintComponent(g);
-
-        // set page text
-        page.setText(currentBook.read());
-        page.setCaretPosition(0);
 
         // draw page #
         g.setFont(c20);
@@ -513,17 +533,21 @@ class Screen extends JPanel implements ActionListener {
     public void actionPerformed(ActionEvent e) {
         if (e.getSource() == forward) {
             currentBook.flipForward();
+            updatePage();
             repaint();
         } else if (e.getSource() == backward) {
             currentBook.flipBackward();
+            updatePage();
             repaint();
         }
 
         else if (e.getSource() == front) {
             currentBook.setPage(1);
+            updatePage();
             repaint();
         } else if (e.getSource() == back) {
             currentBook.setPage(410);
+            updatePage();
             repaint();
         }
 
@@ -539,6 +563,7 @@ class Screen extends JPanel implements ActionListener {
             if (!pageI.getText().equals("") && !pageI.getText().equals("Page")) {
                 currentBook.setPage(Integer.parseInt(pageI.getText()));
             }
+            updatePage();
 
             repaint();
         }
@@ -589,6 +614,7 @@ class Screen extends JPanel implements ActionListener {
             // set page
             currentBook.setPage(page);
             pageI.setText(page + "");
+            updatePage();
 
             repaint();
         }
@@ -605,11 +631,16 @@ class Screen extends JPanel implements ActionListener {
         }
         
     }
+
+    private void updatePage() {
+        page.setText(currentBook.read());
+        page.setCaretPosition(0);
+    }
 }
 
 
 
-public class Library {
+public class Main {
     public static void main(String[] args) {
         Amount a = new Amount();
 
