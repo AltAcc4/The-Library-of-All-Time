@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-//import javax.crypto.Cipher; /* REMOVE // AS NEEDED */
+import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import javax.crypto.spec.IvParameterSpec;
 
@@ -41,9 +41,9 @@ class LibCipher {
     });
 
     // ThreadLocal to reuse the AES Engine per thread for maximum speed
-    private final ThreadLocal<javax.crypto.Cipher> aesHolder = ThreadLocal.withInitial(() -> {
+    private final ThreadLocal<Cipher> aesHolder = ThreadLocal.withInitial(() -> {
         try {
-            return javax.crypto.Cipher.getInstance("AES/CTR/NoPadding");
+            return Cipher.getInstance("AES/CTR/NoPadding");
         } catch (Exception e) {
             throw new RuntimeException("AES/CTR framework initialization failed in Cipher.aesHolder", e);
         }
