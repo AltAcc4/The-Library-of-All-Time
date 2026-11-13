@@ -410,12 +410,16 @@ class Screen extends JPanel implements ActionListener {
     private Book currentBook;
 
     private JButton search, find;
-    private JTextField shelfI, sectionI, indexI, pageI, findI;
+
+    private JTextArea shelfI, sectionI, indexI, pageI, findI;
+    private JScrollPane shelfPane, sectionPane, indexPane, pagePane, findPane;
+    private JButton shelfT, sectionT, indexT, pageT, findT, backT;
 
     private JButton forward, back;
     private JButton backward, front;
     private JButton copy, paste;
 
+    private boolean inMenu;
     private Font c12, c20;
 
     public Screen(Core core, LibCipher LibCipher) {
@@ -427,8 +431,9 @@ class Screen extends JPanel implements ActionListener {
         c12 = new Font("Courier", Font.PLAIN, 12);
         c20 = new Font("Courier", Font.PLAIN, 20);
         currentBook = new Book(core.bookID(BigInteger.ZERO, 0, 0), LibCipher);
+        inMenu = false;
 
-        // make page area
+        // PAGE
         page = new JTextArea();
         page.setEditable(false);
         page.setFont(c12);
@@ -437,44 +442,114 @@ class Screen extends JPanel implements ActionListener {
         this.add(pane);
         page.setCaretPosition(0);
 
-        // make buttons and fields
-        shelfI = new JTextField("Shelf");
-        shelfI.setBounds(25, 30, 100, 30);
-        this.add(shelfI);
-        copy = new JButton("Copy");
-        copy.setBounds(25, 60, 99, 30);
-        copy.addActionListener(this);
-        this.add(copy);
-        paste = new JButton("Paste");
-        paste.setBounds(25, 90, 99, 30);
-        paste.addActionListener(this);
-        this.add(paste);
+        // INPUTS
+        shelfI = new JTextArea(0, 80);
+        shelfI.setFont(c12);
+        shelfI.setLineWrap(true);
+        shelfI.setWrapStyleWord(true);
+        shelfPane = new JScrollPane(shelfI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        shelfPane.setBounds(300, 30, 580, 445);
+        this.add(shelfPane);
+        shelfI.setCaretPosition(0);
+        shelfI.setVisible(false);
+        shelfPane.setVisible(false);
 
-        sectionI = new JTextField("Section");
-        sectionI.setBounds(25, 155, 100, 30);
-        this.add(sectionI);
+        sectionI = new JTextArea(0, 80);
+        sectionI.setFont(c12);
+        sectionI.setLineWrap(true);
+        sectionI.setWrapStyleWord(true);
+        sectionPane = new JScrollPane(sectionI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        sectionPane.setBounds(300, 30, 580, 445);
+        this.add(sectionPane);
+        sectionI.setCaretPosition(0);
+        sectionI.setVisible(false);
+        sectionPane.setVisible(false);
 
-        indexI = new JTextField("Index");
-        indexI.setBounds(25, 220, 100, 30);
-        this.add(indexI);
+        indexI = new JTextArea(0, 80);
+        indexI.setFont(c12);
+        indexI.setLineWrap(true);
+        indexI.setWrapStyleWord(true);
+        indexPane = new JScrollPane(indexI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        indexPane.setBounds(300, 30, 580, 445);
+        this.add(indexPane);
+        indexI.setCaretPosition(0);
+        indexI.setVisible(false);
+        indexPane.setVisible(false);
 
-        pageI = new JTextField("Page");
-        pageI.setBounds(25, 285, 100, 30);
-        this.add(pageI);
+        pageI = new JTextArea(0, 80);
+        pageI.setFont(c12);
+        pageI.setLineWrap(true);
+        pageI.setWrapStyleWord(true);
+        pagePane = new JScrollPane(pageI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        pagePane.setBounds(300, 30, 580, 445);
+        this.add(pagePane);
+        pageI.setCaretPosition(0);
+        pageI.setVisible(false);
+        pagePane.setVisible(false);
 
+        findI = new JTextArea(40, 80);
+        findI.setFont(c12);
+        findI.setLineWrap(true);
+        findI.setWrapStyleWord(true);
+        findPane = new JScrollPane(findI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        findPane.setBounds(300, 30, 580, 445);
+        this.add(findPane);
+        findI.setCaretPosition(0);
+        findI.setVisible(false);
+        findPane.setVisible(false);
+
+        // TOGGLES
+        shelfT = new JButton("Shelf");
+        shelfT.setBounds(25, 30, 99, 30);
+        shelfT.addActionListener(this);
+        this.add(shelfT);
+        sectionT = new JButton("Section");
+        sectionT.setBounds(25, 70, 99, 30);
+        sectionT.addActionListener(this);
+        this.add(sectionT);
+        indexT = new JButton("Index");
+        indexT.setBounds(25, 110, 99, 30);
+        indexT.addActionListener(this);
+        this.add(indexT);
+        pageT = new JButton("Page");
+        pageT.setBounds(25, 150, 99, 30);
+        pageT.addActionListener(this);
+        this.add(pageT);
+        findT = new JButton("Find");
+        findT.setBounds(25, 190, 100, 30);
+        findT.addActionListener(this);
+        this.add(findT);
+        findT.setVisible(true);
+        backT = new JButton("Back");
+        backT.setBounds(25, 270, 100, 30);
+        backT.addActionListener(this);
+        this.add(backT);
+        backT.setVisible(false);
+
+        // ACTION
         search = new JButton("Search");
-        search.setBounds(25, 335, 99, 30);
+        search.setBounds(25, 230, 99, 30);
         search.addActionListener(this);
         this.add(search);
-
-        findI = new JTextField("Find");
-        findI.setBounds(25, 400, 100, 30);
-        this.add(findI);
+        search.setVisible(true);
         find = new JButton("Find");
-        find.setBounds(25, 445, 100, 30);
+        find.setBounds(160, 30, 100, 30);
         find.addActionListener(this);
         this.add(find);
+        find.setVisible(false);
 
+        copy = new JButton("Copy");
+        copy.setBounds(160, 30, 99, 30);
+        copy.addActionListener(this);
+        this.add(copy);
+        copy.setVisible(false);
+        paste = new JButton("Paste");
+        paste.setBounds(160, 70, 99, 30);
+        paste.addActionListener(this);
+        this.add(paste);
+        paste.setVisible(false);
+
+        // NAVIGATION
         forward = new JButton(">");
         forward.setBounds(160, 30, 55, 30);
         forward.addActionListener(this);
@@ -505,28 +580,31 @@ class Screen extends JPanel implements ActionListener {
   	public void paintComponent(Graphics g) {
         super.paintComponent(g);
 
-        // draw page #
-        g.setFont(c20);
-        int pgX = (WIDTH - ((880 - 300) / 2)) - (7 * 7); // page midpoint - (char length * mid # char)
-  		g.drawString("Page " + currentBook.page(), pgX, 20);
-        g.setFont(c12);
+        if (!inMenu) {
+            // draw page #
+            g.setFont(c20);
+            int pgX = (WIDTH - ((880 - 300) / 2)) - (7 * 7); // page midpoint - (char length * mid # char)
+            g.drawString("Page " + currentBook.page(), pgX, 20);
 
-        // draw line indicators
-        g.drawLine(336, 480, 336, 485);
-        g.drawLine(371, 480, 371, 490);
-        g.drawLine(406, 480, 406, 485);
-        g.drawLine(441, 480, 441, 495);
-        g.drawLine(476, 480, 476, 485);
-        g.drawLine(511, 480, 511, 490);
-        g.drawLine(546, 480, 546, 485);
-        g.drawLine(581, 480, 581, 495);
-        g.drawLine(616, 480, 616, 485);
-        g.drawLine(651, 480, 651, 490);
-        g.drawLine(686, 480, 686, 485);
-        g.drawLine(721, 480, 721, 495);
-        g.drawLine(756, 480, 756, 485);
-        g.drawLine(791, 480, 791, 490);
-        g.drawLine(826, 480, 826, 485);
+            // draw line indicators
+            g.drawLine(336, 480, 336, 485);
+            g.drawLine(371, 480, 371, 490);
+            g.drawLine(406, 480, 406, 485);
+            g.drawLine(441, 480, 441, 495);
+            g.drawLine(476, 480, 476, 485);
+            g.drawLine(511, 480, 511, 490);
+            g.drawLine(546, 480, 546, 485);
+            g.drawLine(581, 480, 581, 495);
+            g.drawLine(616, 480, 616, 485);
+            g.drawLine(651, 480, 651, 490);
+            g.drawLine(686, 480, 686, 485);
+            g.drawLine(721, 480, 721, 495);
+            g.drawLine(756, 480, 756, 485);
+            g.drawLine(791, 480, 791, 490);
+            g.drawLine(826, 480, 826, 485);
+        }
+
+        g.setFont(c12);
     }
 
     @Override
@@ -629,7 +707,94 @@ class Screen extends JPanel implements ActionListener {
         } else if (e.getSource() == paste) {
             shelfI.paste();
         }
+
+        else if (e.getSource() == shelfT) {
+            defaultVisible();
+            shelfI.setVisible(true);
+            shelfPane.setVisible(true);
+            copy.setVisible(true);
+            paste.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == sectionT) {
+            defaultVisible();
+            sectionI.setVisible(true);
+            sectionPane.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == indexT) {
+            defaultVisible();
+            indexI.setVisible(true);
+            indexPane.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == pageT) {
+            defaultVisible();
+            pageI.setVisible(true);
+            pagePane.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == findT) {
+            defaultVisible();
+            findI.setVisible(true);
+            findPane.setVisible(true);
+            find.setVisible(true);
+
+            repaint();
+        }
         
+        else if (e.getSource() == backT) {
+            defaultVisible();
+
+            forward.setVisible(true);
+            backward.setVisible(true);
+            front.setVisible(true);
+            back.setVisible(true);
+
+            backT.setVisible(false);
+
+            shelfI.setVisible(false);
+            sectionI.setVisible(false);
+            indexI.setVisible(false);
+            pageI.setVisible(false);
+
+            page.setVisible(true);
+            pane.setVisible(true);
+
+            inMenu = false;
+            repaint();
+        }
+    }
+
+    private void defaultVisible() {
+        // set default visibilities
+        forward.setVisible(false);
+        backward.setVisible(false);
+        front.setVisible(false);
+        back.setVisible(false);
+        
+        backT.setVisible(true);
+
+        shelfI.setVisible(false);
+        sectionI.setVisible(false);
+        indexI.setVisible(false);
+        pageI.setVisible(false);
+        findI.setVisible(false);
+
+        shelfPane.setVisible(false);
+        sectionPane.setVisible(false);
+        indexPane.setVisible(false);
+        pagePane.setVisible(false);
+        findPane.setVisible(false);
+
+        find.setVisible(false);
+        copy.setVisible(false);
+        paste.setVisible(false);
+        
+        page.setVisible(false);
+        pane.setVisible(false);
+
+        inMenu = true;
     }
 
     private void updatePage() {
@@ -640,7 +805,7 @@ class Screen extends JPanel implements ActionListener {
 
 
 
-public class Main {
+public class Library {
     public static void main(String[] args) {
         Amount a = new Amount();
 
