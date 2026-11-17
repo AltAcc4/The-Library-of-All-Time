@@ -397,7 +397,7 @@ class Book {
 
 
 
-class Screen extends JPanel implements ActionListener {
+class Screen extends JPanel implements ActionListener, Runnable {
 
     private Core core;
     private LibCipher LibCipher;
@@ -421,6 +421,8 @@ class Screen extends JPanel implements ActionListener {
 
     private boolean inMenu;
     private Font c12, c20;
+    public String loadString;
+    private Runnable findAlg, searchAlg;
 
     public Screen(Core core, LibCipher LibCipher) {
         this.setLayout(null);
@@ -432,6 +434,7 @@ class Screen extends JPanel implements ActionListener {
         c20 = new Font("Courier", Font.PLAIN, 20);
         currentBook = new Book(core.bookID(BigInteger.ZERO, 0, 0), LibCipher);
         inMenu = false;
+        loadString = "";
 
         // PAGE
         page = new JTextArea();
@@ -568,6 +571,99 @@ class Screen extends JPanel implements ActionListener {
         front.addActionListener(this);
         this.add(front);
 
+        // ALGORITHMS
+        findAlg = () -> {
+            // get and (if needed) correct page
+            loadString(1, 1);
+            int page = -1;
+            if (pageI.getText().equals("") || pageI.getText().equals("Page")) {
+                page = 1;
+            } else {
+                page = Integer.parseInt(pageI.getText());
+            }
+            if (page < 1) {
+                page = 1;
+            } else if (page > 410) {
+                page = 410;
+            }
+
+            // check for valid length
+            loadString(1, 2);
+            String findITxt = findI.getText();
+            if (findITxt.length() > 3200) {
+                throw new IllegalArgumentException("Screen.actionPerformed(ActionEvent).findITxt.length() is too large (>3200)");
+            }
+
+            // get encrypted base-95 of string
+            loadString(1, 3);
+            BigInteger encryptedBase95 = LibCipher.encrypt(LibCipher.toBase95(findITxt));
+            
+            // get text of encrypted base-95 number
+            loadString(1, 4);
+            String text = LibCipher.toText(encryptedBase95);
+
+            // replace text at location with text to find
+            loadString(1, 5);
+            int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() )).intValue();
+            text = text.substring(0, (3200 * (page - 1)) + location) + findITxt + text.substring((3200 * (page - 1)) + location + findITxt.length());
+
+            // run text through toBase95(String) and decrypt number
+            loadString(1, 6);
+            BigInteger newBookID = LibCipher.toBase95(text);
+
+            // set book
+            loadString(1, 7);
+            currentBook = new Book(newBookID, LibCipher, "encrypted");
+
+            // get parts and save to respective slots
+            loadString(1, 8);
+            BigInteger[] bookIDParts = core.bookLoc(LibCipher.decrypt(newBookID));
+            shelfI.setText(bookIDParts[0].toString());
+            sectionI.setText(bookIDParts[1].toString());
+            indexI.setText(bookIDParts[2].toString());
+            
+            // set page
+            loadString(1, 9);
+            currentBook.setPage(page);
+            pageI.setText(page + "");
+
+            updatePage();
+            loadString(1, -1);
+            repaint();
+        };
+
+        searchAlg = () -> {
+            // get shelf, section, and index
+            loadString(2, 1);
+            BigInteger shelfNum = new BigInteger(shelfI.getText());
+            loadString(2, 2);
+            int sectionNum = Integer.parseInt(sectionI.getText());
+            loadString(2, 3);
+            int bookIndex = Integer.parseInt(indexI.getText());
+
+            // set book
+            loadString(2, 4);
+            currentBook = new Book(core.bookID(shelfNum, sectionNum, bookIndex), LibCipher);
+
+            // set page
+            loadString(2, 5);
+            int page = -1;
+            if (pageI.getText().equals("") || pageI.getText().equals("Page")) {
+                page = 1;
+            } else {
+                page = Integer.parseInt(pageI.getText());
+            }
+            if (page < 1) {
+                page = 1;
+            } else if (page > 410) {
+                page = 410;
+            }
+
+            updatePage();
+            loadString(2, -1);
+            repaint();
+        };
+
         updatePage();
     }
     
@@ -579,6 +675,8 @@ class Screen extends JPanel implements ActionListener {
     @Override
   	public void paintComponent(Graphics g) {
         super.paintComponent(g);
+
+        g.drawString(loadString, 25, 350);
 
         if (!inMenu) {
             // draw page #
@@ -631,70 +729,16 @@ class Screen extends JPanel implements ActionListener {
 
         else if (e.getSource() == search) {
 
-            // get shelf, section, and index
-            BigInteger shelfNum = new BigInteger(shelfI.getText());
-            int sectionNum = Integer.parseInt(sectionI.getText());
-            int bookIndex = Integer.parseInt(indexI.getText());
-
-            // set book and page
-            currentBook = new Book(core.bookID(shelfNum, sectionNum, bookIndex), LibCipher);
-            if (!pageI.getText().equals("") && !pageI.getText().equals("Page")) {
-                currentBook.setPage(Integer.parseInt(pageI.getText()));
-            }
-            updatePage();
-
-            repaint();
+            // run search algorithm
+            Thread searchThread = new Thread(searchAlg);
+            searchThread.start();
         }
 
         else if (e.getSource() == find) {
 
-            // get and (if needed) correct page
-            int page = -1;
-            if (pageI.getText().equals("") || pageI.getText().equals("Page")) {
-                page = 1;
-            } else {
-                page = Integer.parseInt(pageI.getText());
-            }
-            if (page < 1) {
-                page = 1;
-            } else if (page > 410) {
-                page = 410;
-            }
-
-            // check for valid length
-            String findITxt = findI.getText();
-            if (findITxt.length() > 3200) {
-                throw new IllegalArgumentException("Screen.actionPerformed(ActionEvent).findITxt.length() is too large (>3200)");
-            }
-
-            // get encrypted base-95 of string
-            BigInteger encryptedBase95 = LibCipher.encrypt(LibCipher.toBase95(findITxt));
-            
-            // get text of encrypted base-95 number
-            String text = LibCipher.toText(encryptedBase95);
-
-            // replace text at location with text to find
-            int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() )).intValue();
-            text = text.substring(0, (3200 * (page - 1)) + location) + findITxt + text.substring((3200 * (page - 1)) + location + findITxt.length());
-
-            // run text through toBase95(String) and decrypt number
-            BigInteger newBookID = LibCipher.toBase95(text);
-
-            // set book
-            currentBook = new Book(newBookID, LibCipher, "encrypted");
-
-            // get parts and save to respective slots
-            BigInteger[] bookIDParts = core.bookLoc(LibCipher.decrypt(newBookID));
-            shelfI.setText(bookIDParts[0].toString());
-            sectionI.setText(bookIDParts[1].toString());
-            indexI.setText(bookIDParts[2].toString());
-            
-            // set page
-            currentBook.setPage(page);
-            pageI.setText(page + "");
-            updatePage();
-
-            repaint();
+            // run find algorithm
+            Thread findThread = new Thread(findAlg);
+            findThread.start();
         }
 
         else if (e.getSource() == copy) {
@@ -757,6 +801,13 @@ class Screen extends JPanel implements ActionListener {
             sectionI.setVisible(false);
             indexI.setVisible(false);
             pageI.setVisible(false);
+            findI.setVisible(false);
+
+            shelfPane.setVisible(false);
+            sectionPane.setVisible(false);
+            indexPane.setVisible(false);
+            pagePane.setVisible(false);
+            findPane.setVisible(false);
 
             page.setVisible(true);
             pane.setVisible(true);
@@ -795,6 +846,51 @@ class Screen extends JPanel implements ActionListener {
         pane.setVisible(false);
 
         inMenu = true;
+    }
+
+    @Override
+    public void run() {}
+
+    private void loadString(int alg, int stage) {
+        if (alg == 1) {
+            if (stage == 1) {
+                loadString = "Getting Page #... 1/9";
+            } else if (stage == 2) {
+                loadString = "Getting Find Text... 2/9";
+            } else if (stage == 3) {
+                loadString = "Encrypting Text... 3/9";
+            } else if (stage == 4) {
+                loadString = "Reading Encrypted Text... 4/9";
+            } else if (stage == 5) {
+                loadString = "Substituting Text... 5/9";
+            } else if (stage == 6) {
+                loadString = "Decrypting Text... 6/9";
+            } else if (stage == 7) {
+                loadString = "Making Book... 7/9";
+            } else if (stage == 8) {
+                loadString = "Getting Location... 8/9";
+            } else if (stage == 9) {
+                loadString = "Setting Page #... 9/9";
+            } else {
+                loadString = "";
+            }
+        } else if (alg == 2) {
+            if (stage == 1) {
+                loadString = "Getting Shelf #... 1/5";
+            } else if (stage == 2) {
+                loadString = "Getting Section #... 2/5";
+            } else if (stage == 3) {
+                loadString = "Getting Index #... 3/5";
+            } else if (stage == 4) {
+                loadString = "Making Book... 4/5";
+            } else if (stage == 5) {
+                loadString = "Setting Page... 5/5";
+            } else {
+                loadString = "";
+            }
+        }
+
+        repaint();
     }
 
     private void updatePage() {
