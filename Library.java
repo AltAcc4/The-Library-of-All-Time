@@ -633,9 +633,30 @@ class Screen extends JPanel implements ActionListener, Runnable {
         };
 
         searchAlg = () -> {
-            // get shelf, section, and index
+            // get shelf in sections of 10000
             loadString(2, 1);
-            BigInteger shelfNum = new BigInteger(shelfI.getText());
+            BigInteger shelfNum = BigInteger.ZERO;
+            int length = shelfI.getDocument().getLength();
+            int current = 0;
+            String shelfITxt = "";
+            while (current != length) {
+                try {
+                    if (length - current < 10000) {
+                        BigInteger shelfPart = new BigInteger(shelfI.getText(current, length - current));
+                        shelfNum.multiply(BigInteger.TEN.pow(length - current)).add(shelfPart);
+                        current += length - current;
+                    } else {
+                        BigInteger shelfPart = new BigInteger(shelfI.getText(current, 10000));
+                        shelfNum.multiply(BigInteger.TEN.pow(10000)).add(shelfPart);
+                        current += 10000;
+                    }
+                    System.out.println(current);
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("Bad Location in Screen.searchAlg");
+                }
+            }
+
+            // get section and index
             loadString(2, 2);
             int sectionNum = Integer.parseInt(sectionI.getText());
             loadString(2, 3);
