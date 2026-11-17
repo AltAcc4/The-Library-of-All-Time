@@ -650,7 +650,6 @@ class Screen extends JPanel implements ActionListener, Runnable {
                         shelfNum.multiply(BigInteger.TEN.pow(10000)).add(shelfPart);
                         current += 10000;
                     }
-                    System.out.println(current);
                 } catch (Exception e) {
                     throw new IllegalArgumentException("Bad Location in Screen.searchAlg");
                 }
