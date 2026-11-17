@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-//import javax.crypto.Cipher; /* REMOVE // AS NEEDED */
+import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import javax.crypto.spec.IvParameterSpec;
 
@@ -32,10 +32,18 @@ class LibCipher {
     private static final String ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%&'()*+,-./[\\]^_`:;<=>?@{|}~ ";
     private static final Map<Integer, BigInteger> powerCache = new ConcurrentHashMap<>();
 
-    // ThreadLocal to reuse the AES Engine per thread for maximum speed
-    private final ThreadLocal<javax.crypto.Cipher> aesHolder = ThreadLocal.withInitial(() -> {
+    private final ThreadLocal<MessageDigest> shaHolder = ThreadLocal.withInitial(() -> {
         try {
-            return javax.crypto.Cipher.getInstance("AES/CTR/NoPadding");
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 initialization failed in Cipher.shaHolder");
+        }
+    });
+
+    // ThreadLocal to reuse the AES Engine per thread for maximum speed
+    private final ThreadLocal<Cipher> aesHolder = ThreadLocal.withInitial(() -> {
+        try {
+            return Cipher.getInstance("AES/CTR/NoPadding");
         } catch (Exception e) {
             throw new RuntimeException("AES/CTR framework initialization failed in Cipher.aesHolder", e);
         }
@@ -46,9 +54,10 @@ class LibCipher {
         
         // hash arbitrary string to derive cryptographically sound 256-bit AES master key
         try {
-            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            MessageDigest sha = shaHolder.get();
+            sha.reset();
             this.masterKey = sha.digest(key.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Key hash via SHA-256 failed in LibCipher(BigInteger)", e);
         }
         
@@ -118,7 +127,8 @@ class LibCipher {
             javax.crypto.Cipher aesCtr = aesHolder.get();
             
             // uniquely seed round key by mixing the master key with internal half-block state
-            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            MessageDigest sha = shaHolder.get();
+            sha.reset();
             sha.update(masterKey);
             sha.update(half.toByteArray());
             byte[] roundKeyBytes = sha.digest();
@@ -191,7 +201,7 @@ class LibCipher {
             throw new IllegalArgumentException("Invalid text in LibCipher.toScrambledID(>String)");
         }
 
-        // split if length is over 50000
+        // split if length is over 1250
         if (text.length() > 1250) {
             int mid = text.length() / 2;
             String firstHalf = text.substring(0, mid);
@@ -205,6 +215,13 @@ class LibCipher {
             return firstValue.multiply(base.pow(secondHalf.length())).add(secondValue);
         }
 
+        int chunk = 1;
+        for (int i = 2; i < 10; i++) {
+            if (text.length() % i == 0) {
+                chunk = i;
+            }
+        }
+
         BigInteger result = BigInteger.ZERO;
         BigInteger base = BigInteger.valueOf(95);
 
@@ -213,16 +230,21 @@ class LibCipher {
             numbers[i] = BigInteger.valueOf(i);
         }
 
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            int index = ALPHABET.indexOf(c);
-            
-            if (index == -1) {
-                throw new IllegalArgumentException("Character '" + c + "' not found in LibCipher.ALPHABET in LibCipher.toBase95(String)");
+        for (int i = 0; i < text.length(); i += chunk) {
+            char[] chars = text.substring(i, i + chunk).toCharArray();
+            BigInteger add = BigInteger.ZERO;
+
+            // get value of chunk
+            for (int j = 0; j < chunk; j++) {
+                int index = ALPHABET.indexOf(chars[j]);
+                if (index == -1) {
+                    throw new IllegalArgumentException("Character '" + chars[j] + "' not found in LibCipher.ALPHABET in LibCipher.toBase95(String)");
+                }
+                add = add.multiply(base).add(numbers[index]);
             }
 
-            // shift value up by one base position and add new digit
-            result = result.multiply(base).add(numbers[index]);
+            // shift value up by chunk base positions and add value of chunk
+            result = result.multiply(base.pow(chunk)).add(add);
         }
 
         return result;
@@ -375,7 +397,7 @@ class Book {
 
 
 
-class Screen extends JPanel implements ActionListener {
+class Screen extends JPanel implements ActionListener, Runnable {
 
     private Core core;
     private LibCipher LibCipher;
@@ -388,13 +410,19 @@ class Screen extends JPanel implements ActionListener {
     private Book currentBook;
 
     private JButton search, find;
-    private JTextField shelfI, sectionI, indexI, pageI, findI;
+
+    private JTextArea shelfI, sectionI, indexI, pageI, findI;
+    private JScrollPane shelfPane, sectionPane, indexPane, pagePane, findPane;
+    private JButton shelfT, sectionT, indexT, pageT, findT, backT;
 
     private JButton forward, back;
     private JButton backward, front;
     private JButton copy, paste;
 
+    private boolean inMenu;
     private Font c12, c20;
+    public String loadString;
+    private Runnable findAlg, searchAlg;
 
     public Screen(Core core, LibCipher LibCipher) {
         this.setLayout(null);
@@ -405,8 +433,10 @@ class Screen extends JPanel implements ActionListener {
         c12 = new Font("Courier", Font.PLAIN, 12);
         c20 = new Font("Courier", Font.PLAIN, 20);
         currentBook = new Book(core.bookID(BigInteger.ZERO, 0, 0), LibCipher);
+        inMenu = false;
+        loadString = "";
 
-        // make page area
+        // PAGE
         page = new JTextArea();
         page.setEditable(false);
         page.setFont(c12);
@@ -415,44 +445,114 @@ class Screen extends JPanel implements ActionListener {
         this.add(pane);
         page.setCaretPosition(0);
 
-        // make buttons and fields
-        shelfI = new JTextField("Shelf");
-        shelfI.setBounds(25, 30, 100, 30);
-        this.add(shelfI);
-        copy = new JButton("Copy");
-        copy.setBounds(25, 60, 99, 30);
-        copy.addActionListener(this);
-        this.add(copy);
-        paste = new JButton("Paste");
-        paste.setBounds(25, 90, 99, 30);
-        paste.addActionListener(this);
-        this.add(paste);
+        // INPUTS
+        shelfI = new JTextArea(0, 80);
+        shelfI.setFont(c12);
+        shelfI.setLineWrap(true);
+        shelfI.setWrapStyleWord(true);
+        shelfPane = new JScrollPane(shelfI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        shelfPane.setBounds(300, 30, 580, 445);
+        this.add(shelfPane);
+        shelfI.setCaretPosition(0);
+        shelfI.setVisible(false);
+        shelfPane.setVisible(false);
 
-        sectionI = new JTextField("Section");
-        sectionI.setBounds(25, 155, 100, 30);
-        this.add(sectionI);
+        sectionI = new JTextArea(0, 80);
+        sectionI.setFont(c12);
+        sectionI.setLineWrap(true);
+        sectionI.setWrapStyleWord(true);
+        sectionPane = new JScrollPane(sectionI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        sectionPane.setBounds(300, 30, 580, 445);
+        this.add(sectionPane);
+        sectionI.setCaretPosition(0);
+        sectionI.setVisible(false);
+        sectionPane.setVisible(false);
 
-        indexI = new JTextField("Index");
-        indexI.setBounds(25, 220, 100, 30);
-        this.add(indexI);
+        indexI = new JTextArea(0, 80);
+        indexI.setFont(c12);
+        indexI.setLineWrap(true);
+        indexI.setWrapStyleWord(true);
+        indexPane = new JScrollPane(indexI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        indexPane.setBounds(300, 30, 580, 445);
+        this.add(indexPane);
+        indexI.setCaretPosition(0);
+        indexI.setVisible(false);
+        indexPane.setVisible(false);
 
-        pageI = new JTextField("Page");
-        pageI.setBounds(25, 285, 100, 30);
-        this.add(pageI);
+        pageI = new JTextArea(0, 80);
+        pageI.setFont(c12);
+        pageI.setLineWrap(true);
+        pageI.setWrapStyleWord(true);
+        pagePane = new JScrollPane(pageI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        pagePane.setBounds(300, 30, 580, 445);
+        this.add(pagePane);
+        pageI.setCaretPosition(0);
+        pageI.setVisible(false);
+        pagePane.setVisible(false);
 
+        findI = new JTextArea(40, 80);
+        findI.setFont(c12);
+        findI.setLineWrap(true);
+        findI.setWrapStyleWord(true);
+        findPane = new JScrollPane(findI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        findPane.setBounds(300, 30, 580, 445);
+        this.add(findPane);
+        findI.setCaretPosition(0);
+        findI.setVisible(false);
+        findPane.setVisible(false);
+
+        // TOGGLES
+        shelfT = new JButton("Shelf");
+        shelfT.setBounds(25, 30, 99, 30);
+        shelfT.addActionListener(this);
+        this.add(shelfT);
+        sectionT = new JButton("Section");
+        sectionT.setBounds(25, 70, 99, 30);
+        sectionT.addActionListener(this);
+        this.add(sectionT);
+        indexT = new JButton("Index");
+        indexT.setBounds(25, 110, 99, 30);
+        indexT.addActionListener(this);
+        this.add(indexT);
+        pageT = new JButton("Page");
+        pageT.setBounds(25, 150, 99, 30);
+        pageT.addActionListener(this);
+        this.add(pageT);
+        findT = new JButton("Find");
+        findT.setBounds(25, 190, 100, 30);
+        findT.addActionListener(this);
+        this.add(findT);
+        findT.setVisible(true);
+        backT = new JButton("Back");
+        backT.setBounds(25, 270, 100, 30);
+        backT.addActionListener(this);
+        this.add(backT);
+        backT.setVisible(false);
+
+        // ACTION
         search = new JButton("Search");
-        search.setBounds(25, 335, 99, 30);
+        search.setBounds(25, 230, 99, 30);
         search.addActionListener(this);
         this.add(search);
-
-        findI = new JTextField("Find");
-        findI.setBounds(25, 400, 100, 30);
-        this.add(findI);
+        search.setVisible(true);
         find = new JButton("Find");
-        find.setBounds(25, 445, 100, 30);
+        find.setBounds(160, 30, 100, 30);
         find.addActionListener(this);
         this.add(find);
+        find.setVisible(false);
 
+        copy = new JButton("Copy");
+        copy.setBounds(160, 30, 99, 30);
+        copy.addActionListener(this);
+        this.add(copy);
+        copy.setVisible(false);
+        paste = new JButton("Paste");
+        paste.setBounds(160, 70, 99, 30);
+        paste.addActionListener(this);
+        this.add(paste);
+        paste.setVisible(false);
+
+        // NAVIGATION
         forward = new JButton(">");
         forward.setBounds(160, 30, 55, 30);
         forward.addActionListener(this);
@@ -470,82 +570,11 @@ class Screen extends JPanel implements ActionListener {
         front.setBounds(215, 70, 55, 30);
         front.addActionListener(this);
         this.add(front);
-    }
-    
-    @Override
-  	public Dimension getPreferredSize() {
-  		return new Dimension(WIDTH, HEIGHT);
-  	}
-    
-    @Override
-  	public void paintComponent(Graphics g) {
-        super.paintComponent(g);
 
-        // set page text
-        page.setText(currentBook.read());
-        page.setCaretPosition(0);
-
-        // draw page #
-        g.setFont(c20);
-        int pgX = (WIDTH - ((880 - 300) / 2)) - (7 * 7); // page midpoint - (char length * mid # char)
-  		g.drawString("Page " + currentBook.page(), pgX, 20);
-        g.setFont(c12);
-
-        // draw line indicators
-        g.drawLine(336, 480, 336, 485);
-        g.drawLine(371, 480, 371, 490);
-        g.drawLine(406, 480, 406, 485);
-        g.drawLine(441, 480, 441, 495);
-        g.drawLine(476, 480, 476, 485);
-        g.drawLine(511, 480, 511, 490);
-        g.drawLine(546, 480, 546, 485);
-        g.drawLine(581, 480, 581, 495);
-        g.drawLine(616, 480, 616, 485);
-        g.drawLine(651, 480, 651, 490);
-        g.drawLine(686, 480, 686, 485);
-        g.drawLine(721, 480, 721, 495);
-        g.drawLine(756, 480, 756, 485);
-        g.drawLine(791, 480, 791, 490);
-        g.drawLine(826, 480, 826, 485);
-    }
-
-    @Override
-    public void actionPerformed(ActionEvent e) {
-        if (e.getSource() == forward) {
-            currentBook.flipForward();
-            repaint();
-        } else if (e.getSource() == backward) {
-            currentBook.flipBackward();
-            repaint();
-        }
-
-        else if (e.getSource() == front) {
-            currentBook.setPage(1);
-            repaint();
-        } else if (e.getSource() == back) {
-            currentBook.setPage(410);
-            repaint();
-        }
-
-        else if (e.getSource() == search) {
-
-            // get shelf, section, and index
-            BigInteger shelfNum = new BigInteger(shelfI.getText());
-            int sectionNum = Integer.parseInt(sectionI.getText());
-            int bookIndex = Integer.parseInt(indexI.getText());
-
-            // set book and page
-            currentBook = new Book(core.bookID(shelfNum, sectionNum, bookIndex), LibCipher);
-            if (!pageI.getText().equals("") && !pageI.getText().equals("Page")) {
-                currentBook.setPage(Integer.parseInt(pageI.getText()));
-            }
-
-            repaint();
-        }
-
-        else if (e.getSource() == find) {
-
+        // ALGORITHMS
+        findAlg = () -> {
             // get and (if needed) correct page
+            loadString(1, 1);
             int page = -1;
             if (pageI.getText().equals("") || pageI.getText().equals("Page")) {
                 page = 1;
@@ -559,38 +588,178 @@ class Screen extends JPanel implements ActionListener {
             }
 
             // check for valid length
+            loadString(1, 2);
             String findITxt = findI.getText();
             if (findITxt.length() > 3200) {
                 throw new IllegalArgumentException("Screen.actionPerformed(ActionEvent).findITxt.length() is too large (>3200)");
             }
 
             // get encrypted base-95 of string
+            loadString(1, 3);
             BigInteger encryptedBase95 = LibCipher.encrypt(LibCipher.toBase95(findITxt));
             
             // get text of encrypted base-95 number
+            loadString(1, 4);
             String text = LibCipher.toText(encryptedBase95);
 
             // replace text at location with text to find
+            loadString(1, 5);
             int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() )).intValue();
             text = text.substring(0, (3200 * (page - 1)) + location) + findITxt + text.substring((3200 * (page - 1)) + location + findITxt.length());
 
             // run text through toBase95(String) and decrypt number
+            loadString(1, 6);
             BigInteger newBookID = LibCipher.toBase95(text);
 
             // set book
+            loadString(1, 7);
             currentBook = new Book(newBookID, LibCipher, "encrypted");
 
             // get parts and save to respective slots
+            loadString(1, 8);
             BigInteger[] bookIDParts = core.bookLoc(LibCipher.decrypt(newBookID));
             shelfI.setText(bookIDParts[0].toString());
             sectionI.setText(bookIDParts[1].toString());
             indexI.setText(bookIDParts[2].toString());
             
             // set page
+            loadString(1, 9);
             currentBook.setPage(page);
             pageI.setText(page + "");
 
+            updatePage();
+            loadString(1, -1);
             repaint();
+        };
+
+        searchAlg = () -> {
+            // get shelf in sections of 10000
+            loadString(2, 1);
+            BigInteger shelfNum = BigInteger.ZERO;
+            int length = shelfI.getDocument().getLength();
+            int current = 0;
+            String shelfITxt = "";
+            while (current != length) {
+                try {
+                    if (length - current < 10000) {
+                        BigInteger shelfPart = new BigInteger(shelfI.getText(current, length - current));
+                        shelfNum.multiply(BigInteger.TEN.pow(length - current)).add(shelfPart);
+                        current += length - current;
+                    } else {
+                        BigInteger shelfPart = new BigInteger(shelfI.getText(current, 10000));
+                        shelfNum.multiply(BigInteger.TEN.pow(10000)).add(shelfPart);
+                        current += 10000;
+                    }
+                    System.out.println(current);
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("Bad Location in Screen.searchAlg");
+                }
+            }
+
+            // get section and index
+            loadString(2, 2);
+            int sectionNum = Integer.parseInt(sectionI.getText());
+            loadString(2, 3);
+            int bookIndex = Integer.parseInt(indexI.getText());
+
+            // set book
+            loadString(2, 4);
+            currentBook = new Book(core.bookID(shelfNum, sectionNum, bookIndex), LibCipher);
+
+            // set page
+            loadString(2, 5);
+            int page = -1;
+            if (pageI.getText().equals("") || pageI.getText().equals("Page")) {
+                page = 1;
+            } else {
+                page = Integer.parseInt(pageI.getText());
+            }
+            if (page < 1) {
+                page = 1;
+            } else if (page > 410) {
+                page = 410;
+            }
+
+            updatePage();
+            loadString(2, -1);
+            repaint();
+        };
+
+        updatePage();
+    }
+    
+    @Override
+  	public Dimension getPreferredSize() {
+  		return new Dimension(WIDTH, HEIGHT);
+  	}
+    
+    @Override
+  	public void paintComponent(Graphics g) {
+        super.paintComponent(g);
+
+        g.drawString(loadString, 25, 350);
+
+        if (!inMenu) {
+            // draw page #
+            g.setFont(c20);
+            int pgX = (WIDTH - ((880 - 300) / 2)) - (7 * 7); // page midpoint - (char length * mid # char)
+            g.drawString("Page " + currentBook.page(), pgX, 20);
+
+            // draw line indicators
+            g.drawLine(336, 480, 336, 485);
+            g.drawLine(371, 480, 371, 490);
+            g.drawLine(406, 480, 406, 485);
+            g.drawLine(441, 480, 441, 495);
+            g.drawLine(476, 480, 476, 485);
+            g.drawLine(511, 480, 511, 490);
+            g.drawLine(546, 480, 546, 485);
+            g.drawLine(581, 480, 581, 495);
+            g.drawLine(616, 480, 616, 485);
+            g.drawLine(651, 480, 651, 490);
+            g.drawLine(686, 480, 686, 485);
+            g.drawLine(721, 480, 721, 495);
+            g.drawLine(756, 480, 756, 485);
+            g.drawLine(791, 480, 791, 490);
+            g.drawLine(826, 480, 826, 485);
+        }
+
+        g.setFont(c12);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        if (e.getSource() == forward) {
+            currentBook.flipForward();
+            updatePage();
+            repaint();
+        } else if (e.getSource() == backward) {
+            currentBook.flipBackward();
+            updatePage();
+            repaint();
+        }
+
+        else if (e.getSource() == front) {
+            currentBook.setPage(1);
+            updatePage();
+            repaint();
+        } else if (e.getSource() == back) {
+            currentBook.setPage(410);
+            updatePage();
+            repaint();
+        }
+
+        else if (e.getSource() == search) {
+
+            // run search algorithm
+            Thread searchThread = new Thread(searchAlg);
+            searchThread.start();
+        }
+
+        else if (e.getSource() == find) {
+
+            // run find algorithm
+            Thread findThread = new Thread(findAlg);
+            findThread.start();
         }
 
         else if (e.getSource() == copy) {
@@ -603,7 +772,151 @@ class Screen extends JPanel implements ActionListener {
         } else if (e.getSource() == paste) {
             shelfI.paste();
         }
+
+        else if (e.getSource() == shelfT) {
+            defaultVisible();
+            shelfI.setVisible(true);
+            shelfPane.setVisible(true);
+            copy.setVisible(true);
+            paste.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == sectionT) {
+            defaultVisible();
+            sectionI.setVisible(true);
+            sectionPane.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == indexT) {
+            defaultVisible();
+            indexI.setVisible(true);
+            indexPane.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == pageT) {
+            defaultVisible();
+            pageI.setVisible(true);
+            pagePane.setVisible(true);
+
+            repaint();
+        } else if (e.getSource() == findT) {
+            defaultVisible();
+            findI.setVisible(true);
+            findPane.setVisible(true);
+            find.setVisible(true);
+
+            repaint();
+        }
         
+        else if (e.getSource() == backT) {
+            defaultVisible();
+
+            forward.setVisible(true);
+            backward.setVisible(true);
+            front.setVisible(true);
+            back.setVisible(true);
+
+            backT.setVisible(false);
+
+            shelfI.setVisible(false);
+            sectionI.setVisible(false);
+            indexI.setVisible(false);
+            pageI.setVisible(false);
+            findI.setVisible(false);
+
+            shelfPane.setVisible(false);
+            sectionPane.setVisible(false);
+            indexPane.setVisible(false);
+            pagePane.setVisible(false);
+            findPane.setVisible(false);
+
+            page.setVisible(true);
+            pane.setVisible(true);
+
+            inMenu = false;
+            repaint();
+        }
+    }
+
+    private void defaultVisible() {
+        // set default visibilities
+        forward.setVisible(false);
+        backward.setVisible(false);
+        front.setVisible(false);
+        back.setVisible(false);
+        
+        backT.setVisible(true);
+
+        shelfI.setVisible(false);
+        sectionI.setVisible(false);
+        indexI.setVisible(false);
+        pageI.setVisible(false);
+        findI.setVisible(false);
+
+        shelfPane.setVisible(false);
+        sectionPane.setVisible(false);
+        indexPane.setVisible(false);
+        pagePane.setVisible(false);
+        findPane.setVisible(false);
+
+        find.setVisible(false);
+        copy.setVisible(false);
+        paste.setVisible(false);
+        
+        page.setVisible(false);
+        pane.setVisible(false);
+
+        inMenu = true;
+    }
+
+    @Override
+    public void run() {}
+
+    private void loadString(int alg, int stage) {
+        if (alg == 1) {
+            if (stage == 1) {
+                loadString = "Getting Page #... 1/9";
+            } else if (stage == 2) {
+                loadString = "Getting Find Text... 2/9";
+            } else if (stage == 3) {
+                loadString = "Encrypting Text... 3/9";
+            } else if (stage == 4) {
+                loadString = "Reading Encrypted Text... 4/9";
+            } else if (stage == 5) {
+                loadString = "Substituting Text... 5/9";
+            } else if (stage == 6) {
+                loadString = "Decrypting Text... 6/9";
+            } else if (stage == 7) {
+                loadString = "Making Book... 7/9";
+            } else if (stage == 8) {
+                loadString = "Getting Location... 8/9";
+            } else if (stage == 9) {
+                loadString = "Setting Page #... 9/9";
+            } else {
+                loadString = "";
+            }
+        } else if (alg == 2) {
+            if (stage == 1) {
+                loadString = "Getting Shelf #... 1/5";
+            } else if (stage == 2) {
+                loadString = "Getting Section #... 2/5";
+            } else if (stage == 3) {
+                loadString = "Getting Index #... 3/5";
+            } else if (stage == 4) {
+                loadString = "Making Book... 4/5";
+            } else if (stage == 5) {
+                loadString = "Setting Page... 5/5";
+            } else {
+                loadString = "";
+            }
+        }
+
+        repaint();
+    }
+
+    private void updatePage() {
+        page.setText(currentBook.read());
+        page.setCaretPosition(0);
     }
 }
 
