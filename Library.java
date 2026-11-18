@@ -265,7 +265,7 @@ class Core {
 
         // prevent invalid coordinates
         if (shelfID == null || shelfID.signum() < 0) {
-            throw new IllegalArgumentException("Invalid shelfID in Core.bookID(>BigInteger, int, int)");
+            throw new IllegalArgumentException("Invalid shelf in Core.bookID(>BigInteger, int, int)");
         }
         if (sectionID < 0 || sectionID >= SECTIONS_PER_SHELF.intValue()) {
             throw new IllegalArgumentException("Invalid sectionID in Core.bookID(BigInteger, >int, int)");
@@ -409,20 +409,20 @@ class Screen extends JPanel implements ActionListener, Runnable {
     private JScrollPane pane;
     private Book currentBook;
 
-    private JButton search, find;
+    private JButton search, find, id;
 
-    private JTextArea shelfI, sectionI, indexI, pageI, findI;
-    private JScrollPane shelfPane, sectionPane, indexPane, pagePane, findPane;
-    private JButton shelfT, sectionT, indexT, pageT, findT, backT;
+    private JTextArea shelfI, sectionI, indexI, pageI, findI, idI;
+    private JScrollPane shelfPane, sectionPane, indexPane, pagePane, findPane, idPane;
+    private JButton shelfT, sectionT, indexT, pageT, findT, backT, idT;
 
     private JButton forward, back;
     private JButton backward, front;
-    private JButton copy, paste;
+    private JButton copy, paste, clear;
 
-    private boolean inMenu;
+    private boolean inMenu, inShelf, inID;
     private Font c12, c20;
     public String loadString;
-    private Runnable findAlg, searchAlg;
+    private Runnable findAlg, searchAlg, idAlg;
 
     public Screen(Core core, LibCipher LibCipher) {
         this.setLayout(null);
@@ -433,8 +433,10 @@ class Screen extends JPanel implements ActionListener, Runnable {
         c12 = new Font("Courier", Font.PLAIN, 12);
         c20 = new Font("Courier", Font.PLAIN, 20);
         currentBook = new Book(core.bookID(BigInteger.ZERO, 0, 0), LibCipher);
-        inMenu = false;
         loadString = "";
+        inMenu = false;
+        inShelf = false;
+        inID = false;
 
         // PAGE
         page = new JTextArea();
@@ -501,6 +503,17 @@ class Screen extends JPanel implements ActionListener, Runnable {
         findI.setVisible(false);
         findPane.setVisible(false);
 
+        idI = new JTextArea(40, 80);
+        idI.setFont(c12);
+        idI.setLineWrap(true);
+        idI.setWrapStyleWord(true);
+        idPane = new JScrollPane(idI, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        idPane.setBounds(300, 30, 580, 445);
+        this.add(idPane);
+        idI.setCaretPosition(0);
+        idI.setVisible(false);
+        idPane.setVisible(false);
+
         // TOGGLES
         shelfT = new JButton("Shelf");
         shelfT.setBounds(25, 30, 99, 30);
@@ -522,16 +535,20 @@ class Screen extends JPanel implements ActionListener, Runnable {
         findT.setBounds(25, 190, 100, 30);
         findT.addActionListener(this);
         this.add(findT);
+        idT = new JButton("ID");
+        idT.setBounds(25, 230, 100, 30);
+        idT.addActionListener(this);
+        this.add(idT);
         findT.setVisible(true);
         backT = new JButton("Back");
-        backT.setBounds(25, 270, 100, 30);
+        backT.setBounds(25, 310, 100, 30);
         backT.addActionListener(this);
         this.add(backT);
         backT.setVisible(false);
 
         // ACTION
         search = new JButton("Search");
-        search.setBounds(25, 230, 99, 30);
+        search.setBounds(25, 270, 99, 30);
         search.addActionListener(this);
         this.add(search);
         search.setVisible(true);
@@ -540,6 +557,11 @@ class Screen extends JPanel implements ActionListener, Runnable {
         find.addActionListener(this);
         this.add(find);
         find.setVisible(false);
+        id = new JButton("Locate");
+        id.setBounds(160, 30, 100, 30);
+        id.addActionListener(this);
+        this.add(id);
+        id.setVisible(false);
 
         copy = new JButton("Copy");
         copy.setBounds(160, 30, 99, 30);
@@ -551,6 +573,11 @@ class Screen extends JPanel implements ActionListener, Runnable {
         paste.addActionListener(this);
         this.add(paste);
         paste.setVisible(false);
+        clear = new JButton("Clear");
+        clear.setBounds(160, 110, 99, 30);
+        clear.addActionListener(this);
+        this.add(clear);
+        clear.setVisible(false);
 
         // NAVIGATION
         forward = new JButton(">");
@@ -607,20 +634,21 @@ class Screen extends JPanel implements ActionListener, Runnable {
             int location = encryptedBase95.mod(BigInteger.valueOf(10000)).mod(BigInteger.valueOf(3200 - findITxt.length() )).intValue();
             text = text.substring(0, (3200 * (page - 1)) + location) + findITxt + text.substring((3200 * (page - 1)) + location + findITxt.length());
 
-            // run text through toBase95(String) and decrypt number
+            // run text through toBase95(String)
             loadString(1, 6);
-            BigInteger newBookID = LibCipher.toBase95(text);
+            BigInteger newBookID = LibCipher.decrypt(LibCipher.toBase95(text));
 
             // set book
             loadString(1, 7);
-            currentBook = new Book(newBookID, LibCipher, "encrypted");
+            currentBook = new Book(newBookID, LibCipher);
 
             // get parts and save to respective slots
             loadString(1, 8);
-            BigInteger[] bookIDParts = core.bookLoc(LibCipher.decrypt(newBookID));
+            BigInteger[] bookIDParts = core.bookLoc(newBookID);
             shelfI.setText(bookIDParts[0].toString());
             sectionI.setText(bookIDParts[1].toString());
             indexI.setText(bookIDParts[2].toString());
+            idI.setText(newBookID.toString());
             
             // set page
             loadString(1, 9);
@@ -637,18 +665,22 @@ class Screen extends JPanel implements ActionListener, Runnable {
             loadString(2, 1);
             BigInteger shelfNum = BigInteger.ZERO;
             int length = shelfI.getDocument().getLength();
+            System.out.println(length);
             int current = 0;
             String shelfITxt = "";
             while (current != length) {
+                System.out.println("unequal");
                 try {
-                    if (length - current < 10000) {
+                    if (length - current < 100000) {
+                        System.out.println("< 10000");
                         BigInteger shelfPart = new BigInteger(shelfI.getText(current, length - current));
-                        shelfNum.multiply(BigInteger.TEN.pow(length - current)).add(shelfPart);
+                        shelfNum = shelfNum.multiply(BigInteger.TEN.pow(length - current)).add(shelfPart);
                         current += length - current;
                     } else {
-                        BigInteger shelfPart = new BigInteger(shelfI.getText(current, 10000));
-                        shelfNum.multiply(BigInteger.TEN.pow(10000)).add(shelfPart);
-                        current += 10000;
+                        BigInteger shelfPart = new BigInteger(shelfI.getText(current, 100000));
+                        shelfNum = shelfNum.multiply(BigInteger.TEN.pow(100000)).add(shelfPart);
+                        current += 100000;
+                        System.out.println(current);
                     }
                 } catch (Exception e) {
                     throw new IllegalArgumentException("Bad Location in Screen.searchAlg");
@@ -661,9 +693,11 @@ class Screen extends JPanel implements ActionListener, Runnable {
             loadString(2, 3);
             int bookIndex = Integer.parseInt(indexI.getText());
 
-            // set book
+            // set book and bookID
             loadString(2, 4);
-            currentBook = new Book(core.bookID(shelfNum, sectionNum, bookIndex), LibCipher);
+            BigInteger bookID = core.bookID(shelfNum, sectionNum, bookIndex);
+            currentBook = new Book(bookID, LibCipher);
+            idI.setText(bookID.toString());
 
             // set page
             loadString(2, 5);
@@ -684,6 +718,59 @@ class Screen extends JPanel implements ActionListener, Runnable {
             repaint();
         };
 
+        idAlg = () -> {
+            // get id in sections of 10000
+            loadString(3, 1);
+            BigInteger bookID = BigInteger.ZERO;
+            int length = idI.getDocument().getLength();
+            int current = 0;
+            String idITxt = "";
+            while (current != length) {
+                try {
+                    if (length - current < 100000) {
+                        BigInteger idPart = new BigInteger(idI.getText(current, length - current));
+                        bookID = bookID.multiply(BigInteger.TEN.pow(length - current)).add(idPart);
+                        current += length - current;
+                    } else {
+                        BigInteger idPart = new BigInteger(idI.getText(current, 100000));
+                        bookID = bookID.multiply(BigInteger.TEN.pow(100000)).add(idPart);
+                        current += 100000;
+                    }
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("Bad Location in Screen.findAlg");
+                }
+            }
+
+            // make book
+            loadString(3, 2);
+            currentBook = new Book(bookID, LibCipher);
+
+            // make parts
+            loadString(3, 3);
+            BigInteger[] bookIDParts = core.bookLoc(bookID);
+            shelfI.setText(bookIDParts[0].toString());
+            sectionI.setText(bookIDParts[1].toString());
+            indexI.setText(bookIDParts[2].toString());
+
+            // set page
+            loadString(3, 4);
+            int page = -1;
+            if (pageI.getText().equals("") || pageI.getText().equals("Page")) {
+                page = 1;
+            } else {
+                page = Integer.parseInt(pageI.getText());
+            }
+            if (page < 1) {
+                page = 1;
+            } else if (page > 410) {
+                page = 410;
+            }
+
+            updatePage();
+            loadString(3, -1);
+            repaint();
+        };
+
         updatePage();
     }
     
@@ -696,7 +783,7 @@ class Screen extends JPanel implements ActionListener, Runnable {
   	public void paintComponent(Graphics g) {
         super.paintComponent(g);
 
-        g.drawString(loadString, 25, 350);
+        g.drawString(loadString, 25, 400);
 
         if (!inMenu) {
             // draw page #
@@ -748,36 +835,47 @@ class Screen extends JPanel implements ActionListener, Runnable {
         }
 
         else if (e.getSource() == search) {
-
-            // run search algorithm
             Thread searchThread = new Thread(searchAlg);
             searchThread.start();
-        }
-
-        else if (e.getSource() == find) {
-
-            // run find algorithm
+        } else if (e.getSource() == find) {
             Thread findThread = new Thread(findAlg);
             findThread.start();
+        } else if (e.getSource() == id) {
+            Thread idThread = new Thread(idAlg);
+            idThread.start();
         }
 
         else if (e.getSource() == copy) {
-            BigInteger[] bookIDParts = core.bookLoc(currentBook.bookID);
-            String shelfITxt = shelfI.getText();
-            shelfI.setText(bookIDParts[0].toString());
-            shelfI.selectAll();
-            shelfI.copy();
-            shelfI.setText(shelfITxt);
+            if (inShelf) {
+                shelfI.selectAll();
+                shelfI.copy();
+            } else if (inID) {
+                idI.selectAll();
+                idI.copy();
+            }
         } else if (e.getSource() == paste) {
-            shelfI.paste();
+            if (inShelf) {
+                shelfI.paste();
+            } else if (inID) {
+                idI.paste();
+            }
+        } else if (e.getSource() == clear) {
+            if (inShelf) {
+                shelfI.setText("");
+            } else if (inID) {
+                idI.setText("");
+            }
         }
 
         else if (e.getSource() == shelfT) {
             defaultVisible();
             shelfI.setVisible(true);
             shelfPane.setVisible(true);
+            inShelf = true;
+
             copy.setVisible(true);
             paste.setVisible(true);
+            clear.setVisible(true);
 
             repaint();
         } else if (e.getSource() == sectionT) {
@@ -806,6 +904,19 @@ class Screen extends JPanel implements ActionListener, Runnable {
 
             repaint();
         }
+        else if (e.getSource() == idT) {
+            defaultVisible();
+            idI.setVisible(true);
+            idPane.setVisible(true);
+            id.setVisible(true);
+            inID = true;
+            
+            copy.setVisible(true);
+            paste.setVisible(true);
+            clear.setVisible(true);
+
+            repaint();
+        }
         
         else if (e.getSource() == backT) {
             defaultVisible();
@@ -816,18 +927,6 @@ class Screen extends JPanel implements ActionListener, Runnable {
             back.setVisible(true);
 
             backT.setVisible(false);
-
-            shelfI.setVisible(false);
-            sectionI.setVisible(false);
-            indexI.setVisible(false);
-            pageI.setVisible(false);
-            findI.setVisible(false);
-
-            shelfPane.setVisible(false);
-            sectionPane.setVisible(false);
-            indexPane.setVisible(false);
-            pagePane.setVisible(false);
-            findPane.setVisible(false);
 
             page.setVisible(true);
             pane.setVisible(true);
@@ -851,21 +950,27 @@ class Screen extends JPanel implements ActionListener, Runnable {
         indexI.setVisible(false);
         pageI.setVisible(false);
         findI.setVisible(false);
+        idI.setVisible(false);
 
         shelfPane.setVisible(false);
         sectionPane.setVisible(false);
         indexPane.setVisible(false);
         pagePane.setVisible(false);
         findPane.setVisible(false);
+        idPane.setVisible(false);
 
         find.setVisible(false);
+        id.setVisible(false);
         copy.setVisible(false);
         paste.setVisible(false);
+        clear.setVisible(false);
         
         page.setVisible(false);
         pane.setVisible(false);
 
         inMenu = true;
+        inShelf = false;
+        inID = false;
     }
 
     @Override
@@ -905,6 +1010,18 @@ class Screen extends JPanel implements ActionListener, Runnable {
                 loadString = "Making Book... 4/5";
             } else if (stage == 5) {
                 loadString = "Setting Page... 5/5";
+            } else {
+                loadString = "";
+            }
+        } else if (alg == 3) {
+            if (stage == 1) {
+                loadString = "Getting ID #... 1/4";
+            } else if (stage == 2) {
+                loadString = "Making Book... 2/4";
+            } else if (stage == 3) {
+                loadString = "Setting Page... 3/4";
+            } else if (stage == 4) {
+                loadString = "Getting Location... 4/4";
             } else {
                 loadString = "";
             }
