@@ -653,7 +653,6 @@ class Screen extends JPanel implements ActionListener, Runnable {
             // set page
             loadString(1, 9);
             currentBook.setPage(page);
-            pageI.setText(page + "");
 
             updatePage();
             loadString(1, -1);
@@ -712,6 +711,7 @@ class Screen extends JPanel implements ActionListener, Runnable {
             } else if (page > 410) {
                 page = 410;
             }
+            currentBook.setPage(page);
 
             updatePage();
             loadString(2, -1);
@@ -765,6 +765,7 @@ class Screen extends JPanel implements ActionListener, Runnable {
             } else if (page > 410) {
                 page = 410;
             }
+            currentBook.setPage(page);
 
             updatePage();
             loadString(3, -1);
@@ -1019,9 +1020,9 @@ class Screen extends JPanel implements ActionListener, Runnable {
             } else if (stage == 2) {
                 loadString = "Making Book... 2/4";
             } else if (stage == 3) {
-                loadString = "Setting Page... 3/4";
+                loadString = "Getting Location... 3/4";
             } else if (stage == 4) {
-                loadString = "Getting Location... 4/4";
+                loadString = "Setting Page... 4/4";
             } else {
                 loadString = "";
             }
